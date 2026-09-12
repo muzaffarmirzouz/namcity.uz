@@ -135,6 +135,24 @@
   .tg-msg-photo{
     width:100%; border-radius:10px; display:block; max-height:320px; object-fit:cover;
   }
+  .tg-msg-video-wrap{position:relative; border-radius:10px; overflow:hidden; background:#000; max-height:360px;}
+  .tg-msg-video-wrap video{width:100%; max-height:360px; display:block; background:#000;}
+  .tg-msg-video-fallback{
+    position:relative; display:block; text-decoration:none; border-radius:10px; overflow:hidden;
+  }
+  .tg-msg-video-fallback img{width:100%; max-height:320px; object-fit:cover; display:block;}
+  .tg-msg-video-fallback .tg-play{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  }
+  .tg-msg-video-fallback .tg-play span{
+    width:52px; height:52px; border-radius:50%; background:rgba(0,0,0,0.55);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .tg-msg-video-fallback .tg-play svg{width:20px; height:20px; fill:#fff; margin-left:3px;}
+  .tg-msg-video-duration{
+    position:absolute; right:8px; bottom:8px; background:rgba(0,0,0,0.65); color:#fff;
+    font-size:11px; font-weight:700; padding:2px 7px; border-radius:6px; pointer-events:none;
+  }
   .tg-msg-text{font-size:14.5px; line-height:1.55; color:var(--text); white-space:pre-wrap; word-break:break-word;}
   .tg-msg-text a{color:var(--tg-blue); text-decoration:none;}
   .tg-msg-text a:hover{text-decoration:underline;}
@@ -299,24 +317,41 @@
     var bubbles = doc.querySelectorAll('.tgme_widget_message_bubble');
     if(!bubbles || bubbles.length === 0){ return false; }
 
+    function bgUrl(el){
+      if(!el){ return null; }
+      var style = el.getAttribute('style') || '';
+      var m = style.match(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/);
+      return m ? m[1] : null;
+    }
+
     var items = [];
     bubbles.forEach(function(bubble){
       var textEl = bubble.querySelector('.tgme_widget_message_text');
       var photoEl = bubble.querySelector('.tgme_widget_message_photo_wrap');
+      var videoPlayer = bubble.querySelector('.tgme_widget_message_video_player');
+      var roundVideo = bubble.querySelector('.tgme_widget_message_roundvideo_player');
       var dateEl = bubble.querySelector('.tgme_widget_message_date');
       var timeEl = dateEl ? dateEl.querySelector('time') : null;
 
       var textHtml = textEl ? textEl.innerHTML : '';
       var link = dateEl ? dateEl.getAttribute('href') : SOURCE_URL;
       var when = timeEl ? timeEl.getAttribute('datetime') : null;
-      var photoUrl = null;
-      if(photoEl){
-        var style = photoEl.getAttribute('style') || '';
-        var m = style.match(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/);
-        if(m){ photoUrl = m[1]; }
+      var photoUrl = bgUrl(photoEl);
+
+      var video = null;
+      var player = videoPlayer || roundVideo;
+      if(player){
+        var videoTag = player.querySelector('video');
+        var thumbEl = player.querySelector('.tgme_widget_message_video_thumb, .tgme_widget_message_roundvideo_thumb');
+        var durEl = player.querySelector('.tgme_widget_message_video_duration, .tgme_widget_message_roundvideo_duration');
+        video = {
+          src: videoTag ? videoTag.getAttribute('src') : null,
+          thumb: bgUrl(thumbEl),
+          duration: durEl ? durEl.textContent.trim() : ''
+        };
       }
 
-      if(!textHtml && !photoUrl){ return; }
+      if(!textHtml && !photoUrl && !video){ return; }
 
       var whenLabel = '';
       if(when){
@@ -326,19 +361,28 @@
         }catch(e){ whenLabel = ''; }
       }
 
-      items.push({textHtml: textHtml, photoUrl: photoUrl, link: link || SOURCE_URL, whenLabel: whenLabel});
+      items.push({textHtml: textHtml, photoUrl: photoUrl, video: video, link: link || SOURCE_URL, whenLabel: whenLabel});
     });
 
     if(items.length === 0){ return false; }
 
     items.reverse();
     items = items.slice(0, 8);
+    var slotSeq = 0;
+    var videoSlots = [];
 
     var html = items.map(function(it){
-      var photoHtml = it.photoUrl ? '<img class="tg-msg-photo" src="' + it.photoUrl + '" alt="" loading="lazy">' : '';
+      var mediaHtml = '';
+      if(it.video){
+        var slotId = 'tg-video-slot-' + (slotSeq++);
+        videoSlots.push({id: slotId, video: it.video, link: it.link});
+        mediaHtml = '<div class="tg-msg-video-wrap" id="' + slotId + '"></div>';
+      } else if(it.photoUrl){
+        mediaHtml = '<img class="tg-msg-photo" src="' + it.photoUrl + '" alt="" loading="lazy">';
+      }
       return '' +
         '<div class="tg-msg">' +
-          photoHtml +
+          mediaHtml +
           '<div class="tg-msg-text">' + it.textHtml + '</div>' +
           '<div class="tg-msg-meta">' +
             '<span>' + escapeHtml(it.whenLabel) + '</span>' +
@@ -349,7 +393,59 @@
 
     feedEl.innerHTML = html;
     if(loadingEl){ loadingEl.style.display = 'none'; }
+
+    videoSlots.forEach(function(slot){
+      var wrap = document.getElementById(slot.id);
+      if(!wrap){ return; }
+      var v = slot.video;
+      if(v.src){
+        var videoEl = document.createElement('video');
+        videoEl.setAttribute('controls', '');
+        videoEl.setAttribute('preload', 'metadata');
+        videoEl.setAttribute('playsinline', '');
+        if(v.thumb){ videoEl.setAttribute('poster', v.thumb); }
+        videoEl.src = v.src;
+        videoEl.addEventListener('error', function(){
+          wrap.innerHTML = '';
+          wrap.appendChild(buildVideoFallback(v, slot.link));
+        });
+        wrap.appendChild(videoEl);
+        if(v.duration){
+          var badge = document.createElement('span');
+          badge.className = 'tg-msg-video-duration';
+          badge.textContent = v.duration;
+          wrap.appendChild(badge);
+        }
+      } else {
+        wrap.appendChild(buildVideoFallback(v, slot.link));
+      }
+    });
+
     return true;
+  }
+
+  function buildVideoFallback(video, link){
+    var a = document.createElement('a');
+    a.className = 'tg-msg-video-fallback';
+    a.href = link;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    var img = document.createElement('img');
+    img.loading = 'lazy';
+    img.alt = '';
+    img.src = video.thumb || '';
+    a.appendChild(img);
+    var play = document.createElement('div');
+    play.className = 'tg-play';
+    play.innerHTML = '<span><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>';
+    a.appendChild(play);
+    if(video.duration){
+      var badge = document.createElement('span');
+      badge.className = 'tg-msg-video-duration';
+      badge.textContent = video.duration;
+      a.appendChild(badge);
+    }
+    return a;
   }
 
   function tryProxy(index){
