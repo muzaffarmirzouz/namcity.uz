@@ -329,9 +329,15 @@
     var items = [];
     bubbles.forEach(function(bubble){
       var textEl = bubble.querySelector('.tgme_widget_message_text');
-      var photoEl = bubble.querySelector('.tgme_widget_message_photo_wrap');
+      // Oddiy rasm, albom (guruhlangan media) ichidagi birinchi rasm — barchasi shu klassda bo'ladi
+      var photoEl = bubble.querySelector('.tgme_widget_message_photo_wrap, .tgme_widget_message_grouped_wrap .tgme_widget_message_photo_wrap');
+      var groupedPhotos = bubble.querySelectorAll('.tgme_widget_message_grouped_wrap .tgme_widget_message_photo_wrap');
       var videoPlayer = bubble.querySelector('.tgme_widget_message_video_player');
       var roundVideo = bubble.querySelector('.tgme_widget_message_roundvideo_player');
+      var voiceEl = bubble.querySelector('.tgme_widget_message_voice');
+      var pollEl = bubble.querySelector('.tgme_widget_message_poll');
+      var docEl = bubble.querySelector('.tgme_widget_message_document');
+      var stickerEl = bubble.querySelector('.tgme_widget_message_sticker, .tgme_widget_message_roundvideo_player');
       var dateEl = bubble.querySelector('.tgme_widget_message_date');
       var timeEl = dateEl ? dateEl.querySelector('time') : null;
 
@@ -339,6 +345,7 @@
       var link = dateEl ? dateEl.getAttribute('href') : SOURCE_URL;
       var when = timeEl ? timeEl.getAttribute('datetime') : null;
       var photoUrl = bgUrl(photoEl);
+      var extraPhotoCount = groupedPhotos && groupedPhotos.length > 1 ? (groupedPhotos.length - 1) : 0;
 
       var video = null;
       var player = videoPlayer || roundVideo;
@@ -353,7 +360,21 @@
         };
       }
 
-      if(!textHtml && !photoUrl && !video){ return; }
+      // Hech qanday matn/rasm/video aniqlanmasa ham (ovozli xabar, so'rovnoma, fayl va h.k.),
+      // postni butunlay o'tkazib yubormasdan umumiy karta sifatida ko'rsatamiz —
+      // shunda lentadagi postlar soni haqiqiy kanaldagi bilan mos keladi.
+      if(!textHtml && !photoUrl && !video){
+        var kind = 'Yangi post';
+        if(voiceEl){ kind = '🎙 Ovozli xabar'; }
+        else if(pollEl){ kind = '📊 So\'rovnoma'; }
+        else if(docEl){ kind = '📎 Fayl'; }
+        else if(stickerEl){ kind = '🙂 Stiker'; }
+        textHtml = '<em>' + kind + ' — to\'liq ko\'rish uchun bosing</em>';
+      }
+
+      if(extraPhotoCount > 0){
+        textHtml = (textHtml ? textHtml + '<br>' : '') + '<span style="opacity:.7">+' + extraPhotoCount + ' ta rasm</span>';
+      }
 
       var whenLabel = '';
       if(when){
