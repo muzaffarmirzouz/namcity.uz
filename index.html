@@ -292,7 +292,9 @@
 (function(){
   var CHANNEL = 'namanganliklar_uz';
   var SOURCE_URL = 'https://t.me/s/' + CHANNEL;
+  var WORKER_URL = 'https://polished-smoke-e2a7.muzaffarmirzo720.workers.dev/';
   var PROXIES = [
+    function(){ return WORKER_URL; },
     function(u){ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
     function(u){ return 'https://corsproxy.io/?url=' + encodeURIComponent(u); },
     function(u){ return 'https://r.jina.ai/' + u; }
