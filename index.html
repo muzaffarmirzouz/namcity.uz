@@ -113,10 +113,38 @@
   }
   .panel-head a:hover{text-decoration:underline;}
 
-  .tg-frame-wrap{position:relative; background:#f0f2f5;}
-  .tg-frame-wrap iframe{
-    width:100%; height:640px; border:none; display:block;
+  .tg-frame-wrap{position:relative; background:#f0f2f5; max-height:640px; overflow-y:auto;}
+  .tg-loading{
+    padding:40px 20px; text-align:center; color:var(--muted); font-size:14px;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
   }
+  .tg-spinner{
+    width:22px; height:22px; border-radius:50%;
+    border:3px solid var(--line); border-top-color:var(--tg-blue);
+    animation:tg-spin 0.8s linear infinite;
+  }
+  @keyframes tg-spin{ to{ transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .tg-spinner{animation:none;} }
+
+  .tg-feed{display:flex; flex-direction:column;}
+  .tg-msg{
+    padding:16px 20px; border-bottom:1px solid var(--line); background:var(--surface);
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .tg-msg:last-child{border-bottom:none;}
+  .tg-msg-photo{
+    width:100%; border-radius:10px; display:block; max-height:320px; object-fit:cover;
+  }
+  .tg-msg-text{font-size:14.5px; line-height:1.55; color:var(--text); white-space:pre-wrap; word-break:break-word;}
+  .tg-msg-text a{color:var(--tg-blue); text-decoration:none;}
+  .tg-msg-text a:hover{text-decoration:underline;}
+  .tg-msg-meta{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size:11.5px; color:var(--muted);
+  }
+  .tg-msg-meta a{color:var(--muted); text-decoration:none; font-weight:700;}
+  .tg-msg-meta a:hover{color:var(--tg-blue);}
+  .tg-empty{padding:40px 20px; text-align:center; color:var(--muted); font-size:14px;}
   .tg-fallback{
     padding:14px 20px; font-size:13px; color:var(--muted); border-top:1px solid var(--line);
     display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
@@ -202,8 +230,12 @@
         </div>
         <a href="https://t.me/namanganliklar_uz" target="_blank" rel="noopener">Kanalga o'tish →</a>
       </div>
-      <div class="tg-frame-wrap">
-        <iframe src="https://t.me/s/namanganliklar_uz" loading="lazy" title="Namanganliklar.uz Telegram kanali"></iframe>
+      <div class="tg-frame-wrap" id="tgFrameWrap">
+        <div class="tg-loading" id="tgLoading">
+          <span class="tg-spinner"></span>
+          <span>Kanal yangiliklari yuklanmoqda…</span>
+        </div>
+        <div class="tg-feed" id="tgFeed"></div>
       </div>
       <div class="tg-fallback">
         <span>Lenta yuklanmayaptimi?</span>
@@ -237,6 +269,112 @@
     <span>Namangan</span>
   </div>
 </footer>
+
+<script>
+(function(){
+  var CHANNEL = 'namanganliklar_uz';
+  var SOURCE_URL = 'https://t.me/s/' + CHANNEL;
+  var PROXIES = [
+    function(u){ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+    function(u){ return 'https://corsproxy.io/?url=' + encodeURIComponent(u); },
+    function(u){ return 'https://r.jina.ai/' + u; }
+  ];
+
+  var feedEl = document.getElementById('tgFeed');
+  var loadingEl = document.getElementById('tgLoading');
+
+  function escapeHtml(s){
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function showFallbackMessage(){
+    if(loadingEl){
+      loadingEl.innerHTML = '<span>Lenta hozircha yuklanmadi. Pastdagi tugma orqali kanalni to\'g\'ridan-to\'g\'ri oching.</span>';
+    }
+  }
+
+  function renderMessages(doc){
+    var bubbles = doc.querySelectorAll('.tgme_widget_message_bubble');
+    if(!bubbles || bubbles.length === 0){ return false; }
+
+    var items = [];
+    bubbles.forEach(function(bubble){
+      var textEl = bubble.querySelector('.tgme_widget_message_text');
+      var photoEl = bubble.querySelector('.tgme_widget_message_photo_wrap');
+      var dateEl = bubble.querySelector('.tgme_widget_message_date');
+      var timeEl = dateEl ? dateEl.querySelector('time') : null;
+
+      var textHtml = textEl ? textEl.innerHTML : '';
+      var link = dateEl ? dateEl.getAttribute('href') : SOURCE_URL;
+      var when = timeEl ? timeEl.getAttribute('datetime') : null;
+      var photoUrl = null;
+      if(photoEl){
+        var style = photoEl.getAttribute('style') || '';
+        var m = style.match(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/);
+        if(m){ photoUrl = m[1]; }
+      }
+
+      if(!textHtml && !photoUrl){ return; }
+
+      var whenLabel = '';
+      if(when){
+        try{
+          var d = new Date(when);
+          whenLabel = d.toLocaleString('uz-UZ', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+        }catch(e){ whenLabel = ''; }
+      }
+
+      items.push({textHtml: textHtml, photoUrl: photoUrl, link: link || SOURCE_URL, whenLabel: whenLabel});
+    });
+
+    if(items.length === 0){ return false; }
+
+    items.reverse();
+    items = items.slice(0, 8);
+
+    var html = items.map(function(it){
+      var photoHtml = it.photoUrl ? '<img class="tg-msg-photo" src="' + it.photoUrl + '" alt="" loading="lazy">' : '';
+      return '' +
+        '<div class="tg-msg">' +
+          photoHtml +
+          '<div class="tg-msg-text">' + it.textHtml + '</div>' +
+          '<div class="tg-msg-meta">' +
+            '<span>' + escapeHtml(it.whenLabel) + '</span>' +
+            '<a href="' + it.link + '" target="_blank" rel="noopener">Ko\'proq →</a>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+
+    feedEl.innerHTML = html;
+    if(loadingEl){ loadingEl.style.display = 'none'; }
+    return true;
+  }
+
+  function tryProxy(index){
+    if(index >= PROXIES.length){
+      showFallbackMessage();
+      return;
+    }
+    var url = PROXIES[index](SOURCE_URL);
+    fetch(url)
+      .then(function(res){
+        if(!res.ok){ throw new Error('bad status'); }
+        return res.text();
+      })
+      .then(function(html){
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(html, 'text/html');
+        var ok = renderMessages(doc);
+        if(!ok){ tryProxy(index + 1); }
+      })
+      .catch(function(){ tryProxy(index + 1); });
+  }
+
+  tryProxy(0);
+})();
+</script>
 
 </body>
 </html>
